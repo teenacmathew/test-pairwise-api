@@ -65,7 +65,10 @@ class Question < ActiveRecord::Base
 
   def create_choices_from_ideas
     if ideas && ideas.any?
+          print ideas
+
       ideas.each do |idea|
+        print idea
         # all but last is considered part of batch create, so the
         # last one will fire things that only need to be run at the end
         choices.create!(:creator => self.creator, :active => true, :data => idea.squish.strip, :part_of_batch_create => idea != ideas.last, :question => self)
@@ -88,10 +91,13 @@ class Question < ActiveRecord::Base
   end
 
   def choose_prompt(options = {})
-
-          # if there is one or fewer active choices, we won't be able to find a prompt
+    # if there is one or fewer active choices, we won't be able to find a prompt
     if self.choices.size - self.inactive_choices_count <= 1 
       raise RuntimeError, "More than one choice needs to be active"
+    end
+
+    if(options[:algorithm] == "single_choice")
+      return single_choice_choose_prompt(options)
     end
 
     if self.uses_catchup? || options[:algorithm] == "catchup"
@@ -122,6 +128,25 @@ class Question < ActiveRecord::Base
     prompt.save
     prompt.algorithm = {:name => 'simple-random'}
     prompt
+  end
+
+  def single_choice_choose_prompt(options)
+    choice_array = []
+    opted_choice_ids = prompts.find_all_by_option_count(1).collect(&:right_choice_id)
+    choices.each do|c|
+      if(!c.user_created && !opted_choice_ids.include?(c.id))
+        choice_array << c
+      end
+    end
+    # TODO : prompt = prompts.find_or_initialize_by_left_choice_id_and_right_choice_id(left_choice_id, right_choice_id)
+    # Create new prompt for next params
+    prompt = prompts.new
+    prompt.left_choice_id =  0 
+    prompt.right_choice_id = choice_array[0].id
+    prompt.algorithm = {:name => 'single_choice'}
+    prompt.option_count = 1
+    prompt.save  
+    prompt  
   end
 
   # adapted from ruby cookbook(2006): section 5-11
@@ -195,7 +220,36 @@ class Question < ActiveRecord::Base
     weights
   end
 
+  def get_next_prompt(params)
+
+    return {} if params.nil?
+
+    result = {}
+    visitor_identifier = params[:visitor_identifier]
+    visitor_identifier = params[:visitor_identifier]
+    current_user = self.site
+    @prompt = choose_prompt(params)
+
+    result.merge!({:picked_prompt_id => @prompt.id})
+
+    visitor = current_user.visitors.find_or_create_by_identifier(visitor_identifier)
+
+    @appearance = create_or_find_next_appearance(visitor, params)
+
+    result.merge!({:appearance_id => @appearance.lookup})      
+
+    if params[:with_visitor_stats]
+      visitor = current_user.visitors.find_or_create_by_identifier(visitor_identifier)
+      result.merge!(:visitor_votes => Vote.find_without_default_scope(:all, :conditions => {:voter_id => visitor, :question_id => self.id}).length)
+      result.merge!(:visitor_ideas => visitor.choices.count)
+    end
+
+    return result
+  end
+
+
   def get_optional_information(params)
+    
 
     return {} if params.nil?
 
@@ -265,7 +319,6 @@ class Question < ActiveRecord::Base
 
       result.merge!(:average_votes => average.round) # round to 2 decimals
     end
-
     return result
   end
 
@@ -707,7 +760,9 @@ class Question < ActiveRecord::Base
   #
   # On success, this method always an appearance.
   def create_or_find_next_appearance(visitor, params, offset=0)
+
     prompt = appearance = nil
+
     # We'll retry this block at most 2 times due to deadlocks.
     max_retries = 2
     retry_count = 0
@@ -722,7 +777,14 @@ class Question < ActiveRecord::Base
           # Only choose prompt if we don't already have one. If we had to
           # retry this transaction due to a deadlock, a prompt may have been
           # selected previously.
-          prompt = choose_prompt(:algorithm => params[:algorithm]) unless prompt
+        if(params[:algorithm] == "single_choice")
+            prompt = choose_prompt(params) 
+            appearance = self.site.record_appearance(visitor, prompt)
+            return appearance
+          end
+          
+            prompt = choose_prompt(:algorithm => params[:algorithm]) unless prompt
+          
           appearance = self.site.record_appearance(visitor, prompt)
         end
       end
@@ -756,7 +818,7 @@ class Question < ActiveRecord::Base
       :lock => true
     )
     last_appearance = unanswered_appearances[offset]
-    if last_appearance && !last_appearance.prompt.active?
+    if last_appearance && last_appearance.prompt && !last_appearance.prompt.active?
       last_appearance.valid_record = false
       last_appearance.validity_information = "Deactivated Prompt"
       last_appearance.save

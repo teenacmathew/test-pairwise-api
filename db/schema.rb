@@ -9,7 +9,7 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20140609193423) do
+ActiveRecord::Schema.define(:version => 20210622233015) do
 
   create_table "appearances", :force => true do |t|
     t.integer  "voter_id"
@@ -175,6 +175,7 @@ ActiveRecord::Schema.define(:version => 20140609193423) do
     t.datetime "updated_at"
     t.text     "tracking"
     t.integer  "votes_count",     :default => 0
+    t.integer  "option_count"
   end
 
   add_index "prompts", ["left_choice_id", "right_choice_id", "question_id"], :name => "a_cool_index", :unique => true

@@ -12,28 +12,70 @@ class PromptsController < InheritedResources::Base
     # After recording vote, next prompt display parameters:
     #   same as in show  - :with_prompt, with_appearance, with visitor_stats, etc
   def vote
-    @question = current_user.questions.find(params[:question_id])
-    @prompt = @question.prompts.find(params[:id])
-    
-    vote_options = params[:vote] || {}
-    vote_options.merge!(:prompt => @prompt, :question => @question)
+    if(params[:type] && params[:type]=="rating")
+      @question = current_user.questions.find(params[:question_id])
+      prompt = @question.prompts.find(params[:id])   
+      if(prompt.option_count != 1)
+        @prompt = Prompt.new
+        @prompt.question_id = @question.id
+        choice = @question.choices.find_by_id(prompt.right_choice_id)
+        @question.choices.each do|c|
+          if(!c.user_created && c.data == choice.data)
+            @prompt.right_choice_id = c.id
+            @prompt.left_choice_id = 0
+          end
+        end        
+        @prompt.votes_count = 1
+        @prompt.option_count = 1
+        @prompt.save
+      else
+        @prompt = prompt
+      end
+     
+      vote_options = params[:vote] || {}
+      vote_options.merge!(:prompt => @prompt, :question => @question, :rate => params[:value])
+      # record rate
+      successful = object= current_user.record_rate(vote_options) 
+      optional_information = []
+      if params[:next_prompt]
+         begin
+             params[:next_prompt].merge!(:with_prompt => true, :algorithm => "single_choice", :choice_id => @prompt.right_choice_id) # We always want to get the next possible prompt
+             @question_optional_information = @question.get_next_prompt(params[:next_prompt])
+         rescue RuntimeError
+             respond_to do |format|
+                format.xml { render :xml => @prompt.to_xml, :status => :conflict and return} 
+             end
+         end         
+      object = @question.prompts.find(@question_optional_information.delete(:picked_prompt_id))
 
-    successful = object= current_user.record_vote(vote_options)
-    optional_information = []
-    if params[:next_prompt]
-       begin
-           params[:next_prompt].merge!(:with_prompt => true) # We always want to get the next possible prompt
-           @question_optional_information = @question.get_optional_information(params[:next_prompt])
-       rescue RuntimeError
+      @question_optional_information.each do |key, value|
+            optional_information << Proc.new { |options| options[:builder].tag!(key, value)}
+      end  
+      end   
+    else
+      @question = current_user.questions.find(params[:question_id])
+      @prompt = @question.prompts.find(params[:id])
+      
+      vote_options = params[:vote] || {}
+      vote_options.merge!(:prompt => @prompt, :question => @question)
+      # record vote
+      successful = object= current_user.record_vote(vote_options)
+      optional_information = []
+      if params[:next_prompt]
+         begin
+             params[:next_prompt].merge!(:with_prompt => true) # We always want to get the next possible prompt
+             @question_optional_information = @question.get_optional_information(params[:next_prompt])
+         rescue RuntimeError
 
-           respond_to do |format|
-              format.xml { render :xml => @prompt.to_xml, :status => :conflict and return} 
-           end
-       end
-       object = @question.prompts.find(@question_optional_information.delete(:picked_prompt_id))
-       @question_optional_information.each do |key, value|
-          optional_information << Proc.new { |options| options[:builder].tag!(key, value)}
-       end
+             respond_to do |format|
+                format.xml { render :xml => @prompt.to_xml, :status => :conflict and return} 
+             end
+         end
+         object = @question.prompts.find(@question_optional_information.delete(:picked_prompt_id))
+         @question_optional_information.each do |key, value|
+            optional_information << Proc.new { |options| options[:builder].tag!(key, value)}
+         end
+      end
     end
 
     respond_to do |format|

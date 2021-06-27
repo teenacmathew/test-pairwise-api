@@ -6,6 +6,9 @@ development: &default
   database: rebirth_development
   pool: 5
   timeout: 5000
+  user: root
+  host: localhost
+  password: Password123#@!
 
 test: &test
   <<: *default

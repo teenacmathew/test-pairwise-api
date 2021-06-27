@@ -77,24 +77,38 @@ class Choice < ActiveRecord::Base
       #{conn.quote_column_name('id')} = #{self.id}")
   end
 
+  def compute_rating(options)
+    #add rating_count to question model - todo [not prompt count]
+    (ratings*options[:prompt][:votes_count] + options[:rate].to_i )/(options[:prompt][:votes_count]+1)
+  end
+
+  def compute_rating!(options)
+    if self.ratings == nil
+      self.ratings = 0 
+    end 
+    self.ratings = compute_rating(options)
+    self.save!
+    self.ratings
+  end
+
   def user_created
     self.creator_id != self.question.creator_id
   end
 
   def compute_bt_score(btprobs = nil)
       if btprobs.nil?
-	      btprobs = self.question.bradley_terry_probs
+        btprobs = self.question.bradley_terry_probs
       end
 
       p_i = btprobs[self.id]
 
       total = 0
       btprobs.each do |id, p_j|
-	      if id == self.id
-		      next
-	      end
+        if id == self.id
+          next
+        end
 
-	      total += (p_i / (p_i + p_j))
+        total += (p_i / (p_i + p_j))
       end
 
       total / (btprobs.size-1)
@@ -125,11 +139,11 @@ class Choice < ActiveRecord::Base
 
     #add prompts with this choice on the left
     previous_choices.each do |r|
-	inserts.push("(NULL, #{self.question_id}, NULL, #{self.id}, '#{timestring}', '#{timestring}', NULL, 0, #{r.id}, NULL, NULL)")
+  inserts.push("(NULL, #{self.question_id}, NULL, #{self.id}, '#{timestring}', '#{timestring}', NULL, 0, #{r.id}, NULL, NULL)")
     end
     #add prompts with this choice on the right 
     previous_choices.each do |l|
-	inserts.push("(NULL, #{self.question_id}, NULL, #{l.id}, '#{timestring}', '#{timestring}', NULL, 0, #{self.id}, NULL, NULL)")
+  inserts.push("(NULL, #{self.question_id}, NULL, #{l.id}, '#{timestring}', '#{timestring}', NULL, 0, #{self.id}, NULL, NULL)")
     end
     conn = Prompts.connection
     sql = "INSERT INTO #{conn.quote_table_name('prompts')} (#{conn.quote_column_name('algorithm_id')}, #{conn.quote_column_name('question_id')}, #{conn.quote_column_name('voter_id')}, #{conn.quote_column_name('left_choice_id')}, #{conn.quote_column_name('created_at')}, #{conn.quote_column_name('updated_at')}, #{conn.quote_column_name('tracking')}, #{conn.quote_column_name('votes_count')}, #{conn.quote_column_name('right_choice_id')}, #{conn.quote_column_name('active')}, #{conn.quote_column_name('randomkey')}) VALUES #{inserts.join(', ')}"

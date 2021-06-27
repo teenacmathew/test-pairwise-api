@@ -24,8 +24,8 @@ class Visitor < ActiveRecord::Base
 
     if options.delete(:skip_fraud_protection)
        last_answered_appearance = self.appearances.find(:first,
-			:conditions => ["appearances. question_id = ? AND appearances.answerable_id IS NOT NULL", prompt.question_id],
-			:order => 'id DESC')
+      :conditions => ["appearances. question_id = ? AND appearances.answerable_id IS NOT NULL", prompt.question_id],
+      :order => 'id DESC')
        if last_answered_appearance && last_answered_appearance.answerable_type == "Skip"
               options.merge!(:valid_record => false)
               options.merge!(:validity_information => "Fraud protection: last visitor action was a skip")
@@ -61,6 +61,16 @@ class Visitor < ActiveRecord::Base
     v = votes.create!(options)
     safely_associate_appearance(v, @appearance, old_visitor_identifier) if associate_appearance
     v
+  end
+
+  def rate_for!(options)     
+    prompt = options[:prompt]
+    choice = prompt.choices[1] # right choice id is set as the next choice
+    Question.increment_counter(:votes_count, options[:question][:id])
+    Prompt.increment_counter(:votes_count, options[:prompt][:id])
+    choice.compute_rating!(options)
+    choice.save!  
+    true
   end
 
   def skip!(options)

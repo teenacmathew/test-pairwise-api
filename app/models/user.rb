@@ -40,6 +40,16 @@ class User < ActiveRecord::Base
     visitor.vote_for!(options)
   end
 
+  def record_rate(options)
+    visitor_identifier = options.delete(:visitor_identifier)
+    if visitor_identifier.nil?
+       visitor = default_visitor
+    else
+       visitor = visitors.find_or_create_by_identifier(visitor_identifier)
+    end
+    visitor.rate_for!(options)
+  end
+
   def record_appearance(visitor, prompt)
     algorithm_name = prompt.algorithm[:name] || prompt.algorithm['name'] unless prompt.algorithm.nil?
     Appearance.create(:voter => visitor, :prompt => prompt, :question_id => prompt.question_id, :site_id => self.id, :lookup =>  Digest::MD5.hexdigest(rand(10000000000).to_s + visitor.id.to_s + prompt.id.to_s), :algorithm_metadata => prompt.algorithm.to_json, :algorithm_name => algorithm_name )

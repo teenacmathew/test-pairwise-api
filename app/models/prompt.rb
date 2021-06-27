@@ -10,7 +10,7 @@ class Prompt < ActiveRecord::Base
   belongs_to :left_choice, :class_name => "Choice", :foreign_key => "left_choice_id", :counter_cache => :prompts_on_the_left_count
   belongs_to :right_choice, :class_name => "Choice", :foreign_key => "right_choice_id", :counter_cache => :prompts_on_the_right_count
   
-  validates_presence_of :left_choice, :on => :create, :message => "can't be blank"
+  #validates_presence_of :left_choice, :on => :create, :message => "can't be blank", :allow => 0
   validates_presence_of :right_choice, :on => :create, :message => "can't be blank"
 
   named_scope :with_left_choice, lambda { |*args| {:conditions => ["left_choice_id = ?", (args.first.id)]} }
@@ -46,7 +46,7 @@ class Prompt < ActiveRecord::Base
   end
   
   def left_choice_text(prompt = nil)
-    left_choice.data
+    left_choice.data rescue ""
   end
   
   def active?
